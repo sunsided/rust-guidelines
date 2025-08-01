@@ -57,6 +57,13 @@ These are human-friendly and AI-compatible guidelines for building robust, maint
     - [Implement `pub const fn as_ref()` Alongside `AsRef`](#implement-pub-const-fn-as_ref-alongside-asref)
       - [Explanation](#explanation-5)
     - [Optional Trait Derives](#optional-trait-derives)
+  - [5. Ownership and Borrowing in API Design](#5-ownership-and-borrowing-in-api-design)
+    - [Prefer Owned Values When in Doubt](#prefer-owned-values-when-in-doubt)
+    - [Avoid Allocations When Possible](#avoid-allocations-when-possible)
+    - [Implement APIs in Terms of Borrows Where Possible](#implement-apis-in-terms-of-borrows-where-possible)
+    - [Use Generic Bounds for Flexible APIs](#use-generic-bounds-for-flexible-apis)
+    - [Prefer `where` Clause Syntax for Generic Code](#prefer-where-clause-syntax-for-generic-code)
+    - [Guidelines Summary](#guidelines-summary)
 - [G. Recommended Tools & Libraries](#g-recommended-tools--libraries)
   - [1. Crate Recommendations](#1-crate-recommendations)
 
@@ -390,7 +397,7 @@ info!(user_id = %uid, "User created successfully");
 | Functions & Methods | `snake_case`                                 | `fn process_user()`                |
 | Constants           | `SCREAMING_SNAKE_CASE`                       | `const MAX_RETRIES: u32 = 5;`      |
 | Type Aliases        | `PascalCase`                                 | `type UserId = Uuid;`              |
-| Generic Parameters  | `T`, `E`, `Item` or domain-meaningful        | `fn parse<T: Deserialize>()`       |
+| Generic Parameters  | `T`, `E`, `Item` or domain-meaningful        | `fn parse<T>() where T: Deserialize` |
 | Feature Flags       | `snake_case`                                 | `#[cfg(feature = "tls")]`          |
 
 ### Explanation
@@ -636,6 +643,179 @@ impl fmt::Display for UserId {
     }
 }
 ```
+
+---
+
+## 5. Ownership and Borrowing in API Design
+
+When designing APIs, balance memory efficiency with code clarity and maintainability. Prefer working code over premature optimization, but avoid unnecessary allocations when possible.
+
+### Prefer Owned Values When in Doubt
+
+* **Prioritize working code over memory-efficient code** — use owned values (`String`, `Vec<T>`) when the ownership semantics are unclear or when it simplifies the API.
+* Owned values eliminate lifetime complexity and make APIs easier to use correctly.
+
+```rust
+// ✅ Clear and simple - prefer this when in doubt
+pub fn process_user(name: String, email: String) -> Result<User, UserError> {
+    // Implementation
+}
+
+// ❌ Only use borrows if you're certain about the lifetime requirements
+pub fn process_user<'a>(name: &'a str, email: &'a str) -> Result<User, UserError> {
+    // Implementation - now callers must manage lifetimes
+}
+```
+
+### Avoid Allocations When Possible
+
+* **Return `&'static str` for constant values** instead of `String`:
+
+```rust
+// ✅ No allocation needed
+pub fn get_default_theme() -> &'static str {
+    "dark"
+}
+
+// ❌ Unnecessary allocation
+pub fn get_default_theme() -> String {
+    "dark".to_string()
+}
+```
+
+* **Use `Cow<str>` when you might return either owned or borrowed data**:
+
+```rust
+use std::borrow::Cow;
+
+// ✅ Flexible - can return either owned or borrowed
+pub fn get_display_name(user: &User) -> Cow<str> {
+    if let Some(nickname) = &user.nickname {
+        Cow::Borrowed(nickname)
+    } else {
+        Cow::Owned(format!("{} {}", user.first_name, user.last_name))
+    }
+}
+```
+
+### Implement APIs in Terms of Borrows Where Possible
+
+* **Design function signatures to accept borrowed values** when the function doesn't need to own the data:
+
+```rust
+// ✅ Accepts both &str and String via deref coercion
+pub fn validate_email(email: &str) -> bool {
+    email.contains('@')
+}
+
+// ✅ Can be called with either:
+validate_email("user@example.com");  // &str
+validate_email(&user.email);         // &String -> &str
+```
+
+* **Be explicit about ownership requirements** — if your function must own the value internally (e.g., for storage, spawning tasks), make this clear in the signature:
+
+```rust
+// ✅ Clear that we need ownership - no surprise internal clones
+pub fn store_user_async(name: String, email: String) -> JoinHandle<Result<(), Error>> {
+    tokio::spawn(async move {
+        // We need owned values for the async task
+        save_to_database(name, email).await
+    })
+}
+```
+
+### Use Generic Bounds for Flexible APIs
+
+* **Use `AsRef<T>` or `Borrow<T>` to accept both owned and borrowed values**:
+
+```rust
+use std::borrow::Borrow;
+
+// ✅ Accepts both String and &str
+pub fn process_message<S>(message: S) -> String
+where
+    S: AsRef<str>,
+{
+    let msg = message.as_ref();
+    format!("Processed: {}", msg)
+}
+
+// ✅ Can be called with either:
+process_message("hello");           // &str
+process_message(String::from("hello")); // String
+
+// ✅ For custom types, use Borrow<T>
+pub fn find_user<E>(email: E) -> Option<User>
+where
+    E: Borrow<Email>,
+{
+    let email_ref = email.borrow();
+    // Implementation
+}
+```
+
+* **This pattern allows callers maximum flexibility** while keeping your implementation simple.
+
+### Prefer `where` Clause Syntax for Generic Code
+
+* **Use `where` clause syntax instead of inline trait bounds** for better readability and consistency:
+
+```rust
+// ✅ Preferred - use where clause
+pub fn process_message<S>(message: S) -> String
+where
+    S: AsRef<str>,
+{
+    let msg = message.as_ref();
+    format!("Processed: {}", msg)
+}
+
+// ❌ Avoid inline bounds for generic code
+pub fn process_message<S: AsRef<str>>(message: S) -> String {
+    let msg = message.as_ref();
+    format!("Processed: {}", msg)
+}
+```
+
+* **`where` clauses are especially beneficial with multiple or complex bounds**:
+
+```rust
+// ✅ Clear and readable with where clause
+pub fn serialize_and_validate<T, E>(data: T) -> Result<String, E>
+where
+    T: Serialize + Clone + Debug,
+    E: From<serde_json::Error> + From<ValidationError>,
+{
+    // Implementation
+}
+
+// ❌ Hard to read with inline bounds
+pub fn serialize_and_validate<T: Serialize + Clone + Debug, E: From<serde_json::Error> + From<ValidationError>>(data: T) -> Result<String, E> {
+    // Implementation
+}
+```
+
+* **For simple single bounds, `where` clause is still preferred for consistency**:
+
+```rust
+// ✅ Consistent style
+pub fn find_user<E>(email: E) -> Option<User>
+where
+    E: Borrow<Email>,
+{
+    let email_ref = email.borrow();
+    // Implementation
+}
+```
+
+### Guidelines Summary
+
+1. **Default to owned values** (`String`, `Vec<T>`) when designing new APIs
+2. **Avoid allocations** when you can return `&'static str` or use `Cow<T>`
+3. **Accept borrows in function parameters** unless you need ownership
+4. **Be explicit about ownership needs** — no surprise internal clones
+5. **Use generic bounds** (`AsRef<T>`, `Borrow<T>`) for maximum API flexibility
 
 ---
 
