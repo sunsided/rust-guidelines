@@ -662,7 +662,7 @@ pub fn process_user(name: String, email: String) -> Result<User, UserError> {
 }
 
 // ❌ Only use borrows if you're certain about the lifetime requirements
-pub fn process_user<'a>(name: &'a str, email: &'a str) -> Result<User, UserError> {
+pub fn process_user<'a, 'b, 'c: 'a + 'b>(name: &'a str, email: &'b str) -> Result<&'c User, UserError> {
     // Implementation - now callers must manage lifetimes
 }
 ```
