@@ -4,6 +4,8 @@ These are human-friendly and AI-compatible guidelines for building robust, maint
 
 ---
 
+# A. Project Foundation (Setup & Structure)
+
 ## 1. Use the Latest Rust Edition
 
 * Always use the latest Rust edition (`2024` as of now) in all crates:
@@ -73,7 +75,115 @@ serde = { version = "1.0", features = ["derive"] }
 
 ---
 
-## 3. Prefer `thiserror` and Specific Error Types
+## 3. Workspace Management
+
+* Use workspace inheritance (`[workspace.dependencies]`) to avoid version mismatches.
+* Keep top-level `Cargo.lock` for apps (omit for libraries).
+
+---
+
+## 4. Configuration and Secrets
+
+* Use the `config` crate (or `figment`, `envy`, etc.) to load layered config:
+
+```rust
+#[derive(Deserialize)]
+struct Settings {
+    port: u16,
+    database_url: String,
+}
+```
+
+* Load from environment variables, files, or CLI args. Never commit secrets.
+* Use [`dotenvy`] in your application code to load `.env` files.
+* Add `.env` files as a `.gitignore` rule.
+
+[dotenvy]: https://github.com/allan2/dotenvy
+
+---
+
+## 5. Versioning, Linting, Formatting
+
+* Use `rustfmt` and `clippy` on CI.
+* Add `.cargo/config.toml` to enable strict defaults:
+
+```toml
+[alias]
+check-all = "check --all-targets --all-features"
+fix = "clippy --fix --allow-dirty --allow-staged"
+
+[target.'cfg(all())']
+rustflags = ["-Dwarnings"]
+```
+
+---
+
+## 6. Feature Flags and CI
+
+* Use conditional compilation for platform or feature-specific code (`#[cfg(...)]`)
+* Use `cargo nextest` for faster test runs in CI
+* Structure CI to include: `cargo check`, `cargo clippy`, `cargo fmt`, `cargo test`
+
+---
+
+# B. Code Organization & Architecture
+
+## 1. Organize Code Logically (Prefer Feature-Based Modules)
+
+* Group related code (routes, services, models) in self-contained modules or crates:
+
+```
+src/
+├── lib.rs
+├── user.rs
+├── user/
+│   ├── model.rs
+│   ├── handler.rs
+│   └── service.rs
+```
+
+* Avoid splitting by "controllers/services/models" unless you're working in a monolith with shared concerns.
+
+---
+
+## 2. Avoid Global State, Prefer Explicit Dependency Injection
+
+* Use struct-based injection for service composition:
+
+```rust
+pub struct AppState {
+    db: PgPool,
+    email: EmailClient,
+}
+
+impl AppState {
+    pub fn new(db: PgPool, email: EmailClient) -> Self {
+        Self { db, email }
+    }
+}
+```
+
+* Share state safely with `Arc<AppState>`.
+
+---
+
+## 3. Avoid Overengineering Too Early
+
+* Don't introduce traits just to "test easily". Stick to concrete types until abstraction is justified.
+* Don't prematurely build plugin systems, service locators, or fancy macro DSLs.
+
+---
+
+## 4. Documentation and Examples
+
+* Write `//!` crate-level docs and `///` API docs.
+* Include examples in `examples/` or inline doc tests with `/// ```rust`.
+
+---
+
+# C. Error Handling & Safety
+
+## 1. Prefer `thiserror` and Specific Error Types
 
 * Define domain-specific error types early using `thiserror`.
 
@@ -96,42 +206,7 @@ pub enum UserServiceError {
 
 ---
 
-## 4. Use Tokio Runtime for Async Work
-
-* For async code, use `tokio` as the default runtime.
-
-```rust
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    // startup
-    Ok(())
-}
-```
-
-* Prefer Rust's native `async` support in trait objects where possible.
-* If unergonomic, prefer `async-trait` for trait objects involving async.
-
----
-
-## 5. Organize Code Logically (Prefer Feature-Based Modules)
-
-* Group related code (routes, services, models) in self-contained modules or crates:
-
-```
-src/
-├── lib.rs
-├── user.rs
-├── user/
-│   ├── model.rs
-│   ├── handler.rs
-│   └── service.rs
-```
-
-* Avoid splitting by "controllers/services/models" unless you're working in a monolith with shared concerns.
-
----
-
-## 6. Handle Errors Explicitly, Avoid `unwrap()`
+## 2. Handle Errors Explicitly, Avoid `unwrap()`
 
 * Convert errors as early as possible into your domain types or propagate via `?`.
 * Use `expect()` in production code only if you can guarantee that it will not fail.
@@ -140,7 +215,7 @@ src/
 
 ---
 
-## 7. Validate Input Early and Clearly
+## 3. Validate Input Early and Clearly
 
 * Use typed structs with validation in deserialization layers:
 
@@ -158,28 +233,59 @@ pub struct CreateUser {
 
 ---
 
-## 8. Avoid Global State, Prefer Explicit Dependency Injection
+## 4. Prefer Compile-Time Over Runtime Safety
 
-* Use struct-based injection for service composition:
+* Use `Option` and `Result` for error signaling.
+* Prefer `enum` variants for domain logic over stringly-typed logic.
+* Minimize use of `unsafe`; encapsulate it behind safe APIs if needed.
+* Consider using `#![forbid(unsafe_code)]` on the `lib.rs` or `main.rs`. See [Rust Safety Dance].
 
-```rust
-pub struct AppState {
-    db: PgPool,
-    email: EmailClient,
-}
-
-impl AppState {
-    pub fn new(db: PgPool, email: EmailClient) -> Self {
-        Self { db, email }
-    }
-}
-```
-
-* Share state safely with `Arc<AppState>`.
+[Rust Safety Dance]: https://github.com/rust-secure-code/safety-dance
 
 ---
 
-## 9. Write Tests: Unit, Integration, and Property-Based
+## 5. Secure by Default
+
+* Always validate input and sanitize outputs
+* Avoid leaking internal errors via HTTP responses—wrap in proper error responses
+* If exposing public APIs, document and version them.
+
+---
+
+# D. Async & Runtime
+
+## 1. Use Tokio Runtime for Async Work
+
+* For async code, use `tokio` as the default runtime.
+
+```rust
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
+    // startup
+    Ok(())
+}
+```
+
+* Prefer Rust's native `async` support in trait objects where possible.
+* If unergonomic, prefer `async-trait` for trait objects involving async.
+
+---
+
+## 2. Graceful Shutdown
+
+* On servers, always support `SIGTERM` / `SIGINT` for graceful shutdown:
+
+```rust
+tokio::signal::ctrl_c().await?;
+```
+
+* Cancel long-running tasks via `tokio::select!` and `CancellationToken`
+
+---
+
+# E. Testing & Quality
+
+## 1. Write Tests: Unit, Integration, and Property-Based
 
 * Unit test all business logic in isolation.
 * Integration tests should be in `/tests`, optionally using `tokio::test`.
@@ -197,7 +303,7 @@ async fn test_create_user() {
 
 ---
 
-## 10. Use Logging and Tracing
+## 2. Use Logging and Tracing
 
 * Prefer `tracing` over `log`:
 
@@ -212,120 +318,9 @@ info!(user_id = %uid, "User created successfully");
 
 ---
 
-## 11. Secure by Default
+# F. Naming Conventions & API Design
 
-* Always validate input and sanitize outputs
-* Avoid leaking internal errors via HTTP responses—wrap in proper error responses
-* If exposing public APIs, document and version them.
-
----
-
-## 12. Configuration and Secrets
-
-* Use the `config` crate (or `figment`, `envy`, etc.) to load layered config:
-
-```rust
-#[derive(Deserialize)]
-struct Settings {
-    port: u16,
-    database_url: String,
-}
-```
-
-* Load from environment variables, files, or CLI args. Never commit secrets.
-* Use [`dotenvy`] in your application code to load `.env` files.
-* Add `.env` files as a `.gitignore` rule.
-
-[dotenvy]: https://github.com/allan2/dotenvy
-
----
-
-## 13. Versioning, Linting, Formatting
-
-* Use `rustfmt` and `clippy` on CI.
-* Add `.cargo/config.toml` to enable strict defaults:
-
-```toml
-[alias]
-check-all = "check --all-targets --all-features"
-fix = "clippy --fix --allow-dirty --allow-staged"
-
-[target.'cfg(all())']
-rustflags = ["-Dwarnings"]
-```
-
----
-
-## 14. Prefer Compile-Time Over Runtime Safety
-
-* Use `Option` and `Result` for error signaling.
-* Prefer `enum` variants for domain logic over stringly-typed logic.
-* Minimize use of `unsafe`; encapsulate it behind safe APIs if needed.
-* Consider using `#![forbid(unsafe_code)]` on the `lib.rs` or `main.rs`. See [Rust Safety Dance].
-
-[Rust Safety Dance]: (https://github.com/rust-secure-code/safety-dance)
-
----
-
-## 15. Avoid Overengineering Too Early
-
-* Don't introduce traits just to “test easily”. Stick to concrete types until abstraction is justified.
-* Don’t prematurely build plugin systems, service locators, or fancy macro DSLs.
-
----
-
-## 16. Crate Recommendations
-
-| Purpose            | Crate                                          |
-|--------------------|------------------------------------------------|
-| Async runtime      | `tokio`                                        |
-| Errors             | `thiserror`, `eyre`                            |
-| Serialization      | `serde`                                        |
-| HTTP server/client | `axum`, `reqwest`                              |
-| Validation         | `validator`                                    |
-| Logging/Tracing    | `tracing`, `tracing-subscriber`                |
-| Database           | `sqlx`, `diesel`                               |  
-| Tests + Fixtures   | `insta`, `assert_cmd`, `test-case`, `proptest` |
-
----
-
-## 17. Feature Flags and CI
-
-* Use conditional compilation for platform or feature-specific code (`#[cfg(...)]`)
-* Use `cargo nextest` for faster test runs in CI
-* Structure CI to include: `cargo check`, `cargo clippy`, `cargo fmt`, `cargo test`
-
----
-
-## 18. Graceful Shutdown
-
-* On servers, always support `SIGTERM` / `SIGINT` for graceful shutdown:
-
-```rust
-tokio::signal::ctrl_c().await?;
-```
-
-* Cancel long-running tasks via `tokio::select!` and `CancellationToken`
-
----
-
-## 19. Workspace Management
-
-* Use workspace inheritance (`[workspace.dependencies]`) to avoid version mismatches.
-* Keep top-level `Cargo.lock` for apps (omit for libraries).
-
----
-
-## 20. Documentation and Examples
-
-* Write `//!` crate-level docs and `///` API docs.
-* Include examples in `examples/` or inline doc tests with `/// ```rust`.
-
----
-
-## 21. Naming Conventions
-
-### General Naming Rules
+## 1. General Naming Rules
 
 | Entity              | Convention                                   | Example                            |
 | ------------------- | -------------------------------------------- | ---------------------------------- |
@@ -338,7 +333,7 @@ tokio::signal::ctrl_c().await?;
 | Generic Parameters  | `T`, `E`, `Item` or domain-meaningful        | `fn parse<T: Deserialize>()`       |
 | Feature Flags       | `snake_case`                                 | `#[cfg(feature = "tls")]`          |
 
-##### Explanation
+### Explanation
 
 * These follow standard Rust community idioms.
 * Avoid acronyms in all caps unless conventional (e.g., `HttpClient`, not `HTTPClient`).
@@ -346,12 +341,12 @@ tokio::signal::ctrl_c().await?;
 
 ---
 
-### Test Function Naming
+## 2. Test Function Naming
 
 **Avoid test function names that redundantly contain `test_`.**
 The attribute `#[test]` already marks the function as a test.
 
-##### Not recommended
+### Not recommended
 
 ```rust
 #[test]
@@ -361,7 +356,7 @@ fn test_create_user() { ... }
 fn test1() { ... }
 ```
 
-##### Recommended
+### Recommended
 
 * **Concise behavior-focused names** for simple units:
 
@@ -383,13 +378,13 @@ fn when_user_does_not_exist_then_returns_404() { ... }
 fn when_updating_profile_then_database_is_updated() { ... }
 ```
 
-##### Explanation
+### Explanation
 
 * This naming pattern makes the test suite read like a specification.
 * It's especially helpful for developers coming from Python (`unittest`, `pytest`) or Java/Kotlin (JUnit/Spock), where test method names often follow `testMethodName` or `given_when_then` naming.
 * Avoid overly verbose names. Be specific, but concise.
 
-#### Optional: Parametrized Test Names
+### Optional: Parametrized Test Names
 
 * When using crates like [`test-case`](https://docs.rs/test-case), provide descriptive labels:
 
@@ -401,11 +396,13 @@ fn validates_email_format(input: &str, expected: bool) {
 }
 ```
 
-### Public API Naming
+---
+
+## 3. Public API Naming
 
 When designing HTTP APIs or exposing serialized structs to external clients (e.g., via JSON or gRPC), follow consistent naming for compatibility and readability.
 
-#### HTTP Route Naming
+### HTTP Route Naming
 
 * Use **`kebab-case`** for URL path segments:
 
@@ -418,13 +415,12 @@ GET    /api/v1/users/{user_id}/reset-password
 * Avoid `snake_case` in URLs, unless used for path placeholders.
 * Avoid using `snake_case` for query arguments
 
-##### Explanation
+### Explanation
 
 * `kebab-case` is easier to read and commonly adopted in HTTP APIs (e.g., GitHub, Stripe).
 * This naming also avoids ambiguity in tooling or path parsing.
 
-
-#### JSON Field Naming
+### JSON Field Naming
 
 * Use **`camelCase`** for all serialized field names in public APIs.
 * Apply `#[serde(rename_all = "camelCase")]` on the struct level:
@@ -439,18 +435,16 @@ pub struct CreateUserRequest {
 }
 ```
 
-##### Explanation
+### Explanation
 
 * This aligns with JSON naming conventions used in most web APIs.
 * Avoid mixing naming conventions between backend field names and JSON.
 
----
-
-#### gRPC Protobuf Definitions
+### gRPC Protobuf Definitions
 
 When designing `.proto` files for use with gRPC and Rust (e.g. via `tonic` + `prost`), follow idiomatic naming conventions to ensure consistency and compatibility across languages and generated clients.
 
-##### Message and Field Naming
+#### Message and Field Naming
 
 | Element          | Convention             | Example                   |
 |------------------|------------------------|---------------------------|
@@ -475,13 +469,13 @@ enum UserStatus {
 }
 ```
 
-##### Explanation
+#### Explanation
 
 * `snake_case` for fields ensures consistent mapping to Rust and Python.
 * `PascalCase` is used for all top-level identifiers: messages, services, enums, and RPCs.
 * Enum values are conventionally written in uppercase with a type prefix (e.g., `USER_STATUS_ACTIVE`) to avoid naming conflicts.
 
-##### Rust-Specific Notes
+#### Rust-Specific Notes
 
 * The `prost` code generator will translate `snake_case` Protobuf fields to `snake_case` Rust struct fields.
 * When exposing gRPC-generated structs as JSON via REST, use `#[serde(rename_all = "camelCase")]` to match external API conventions:
@@ -503,15 +497,9 @@ pub struct CreateUserResponse {
 
 ---
 
-Here is a new section for your **Rust Coding Guidelines** document, continuing the established structure and voice:
-
----
-
-## 23. Newtype Domain Wrappers
+## 4. Newtype Domain Wrappers
 
 Use **newtypes** to model domain concepts explicitly — especially identifiers, secrets, tokens, or business rules. This improves type safety, clarifies intent, and avoids accidental mixing of unrelated data.
-
----
 
 ### Prefer Newtypes Over Aliases for Domain Values
 
@@ -528,8 +516,6 @@ Prefer `struct` newtypes for domain clarity and compiler enforcement:
 pub struct UserId(String);
 ```
 
----
-
 ### Implement `Default` for Empty/Sentinel States
 
 For newtypes over `String`, `Uuid`, or `Vec`, implement `Default` when a neutral or placeholder value makes sense:
@@ -543,8 +529,6 @@ impl Default for UserId {
 ```
 
 This allows structs using your type to derive `Default` cleanly and simplifies tests and construction in generic contexts.
-
----
 
 ### Implement `pub const fn as_ref()` Alongside `AsRef`
 
@@ -565,14 +549,12 @@ impl AsRef<str> for UserId {
 }
 ```
 
-##### Explanation
+#### Explanation
 
 * `const fn` allows your accessor to be used in `const` contexts (e.g., static routes, match arms).
 * Implementing `AsRef<str>` or `AsRef<[u8]>` makes your type ergonomic in APIs expecting raw types.
 
 This is especially useful when composing with `Path`, `Display`, `Serialize`, or custom error messages.
-
----
 
 ### Optional Trait Derives
 
@@ -594,3 +576,20 @@ impl fmt::Display for UserId {
     }
 }
 ```
+
+---
+
+# G. Recommended Tools & Libraries
+
+## 1. Crate Recommendations
+
+| Purpose            | Crate                                          |
+|--------------------|------------------------------------------------|
+| Async runtime      | `tokio`                                        |
+| Errors             | `thiserror`, `eyre`                            |
+| Serialization      | `serde`                                        |
+| HTTP server/client | `axum`, `reqwest`                              |
+| Validation         | `validator`                                    |
+| Logging/Tracing    | `tracing`, `tracing-subscriber`                |
+| Database           | `sqlx`, `diesel`                               |
+| Tests + Fixtures   | `insta`, `assert_cmd`, `test-case`, `proptest` |
