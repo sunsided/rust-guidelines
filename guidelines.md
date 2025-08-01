@@ -2,6 +2,66 @@
 
 These are human-friendly and AI-compatible guidelines for building robust, maintainable, and idiomatic Rust applications, especially in async and service-oriented contexts.
 
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [A. Project Foundation (Setup & Structure)](#a-project-foundation-setup--structure)
+  - [1. Use the Latest Rust Edition](#1-use-the-latest-rust-edition)
+  - [2. Choose the Right Project Layout](#2-choose-the-right-project-layout)
+    - [Flat Layout (Simple Crates)](#flat-layout-simple-crates)
+    - [Workspace Layout (Complex Apps / Services)](#workspace-layout-complex-apps--services)
+  - [3. Workspace Management](#3-workspace-management)
+  - [4. Configuration and Secrets](#4-configuration-and-secrets)
+  - [5. Versioning, Linting, Formatting](#5-versioning-linting-formatting)
+  - [6. Feature Flags and CI](#6-feature-flags-and-ci)
+- [B. Code Organization & Architecture](#b-code-organization--architecture)
+  - [1. Organize Code Logically (Prefer Feature-Based Modules)](#1-organize-code-logically-prefer-feature-based-modules)
+  - [2. Avoid Global State, Prefer Explicit Dependency Injection](#2-avoid-global-state-prefer-explicit-dependency-injection)
+  - [3. Avoid Overengineering Too Early](#3-avoid-overengineering-too-early)
+  - [4. Documentation and Examples](#4-documentation-and-examples)
+- [C. Error Handling & Safety](#c-error-handling--safety)
+  - [1. Prefer `thiserror` and Specific Error Types](#1-prefer-thiserror-and-specific-error-types)
+  - [2. Handle Errors Explicitly, Avoid `unwrap()`](#2-handle-errors-explicitly-avoid-unwrap)
+  - [3. Validate Input Early and Clearly](#3-validate-input-early-and-clearly)
+  - [4. Prefer Compile-Time Over Runtime Safety](#4-prefer-compile-time-over-runtime-safety)
+  - [5. Secure by Default](#5-secure-by-default)
+- [D. Async & Runtime](#d-async--runtime)
+  - [1. Use Tokio Runtime for Async Work](#1-use-tokio-runtime-for-async-work)
+  - [2. Graceful Shutdown](#2-graceful-shutdown)
+- [E. Testing & Quality](#e-testing--quality)
+  - [1. Write Tests: Unit, Integration, and Property-Based](#1-write-tests-unit-integration-and-property-based)
+  - [2. Use Logging and Tracing](#2-use-logging-and-tracing)
+- [F. Naming Conventions & API Design](#f-naming-conventions--api-design)
+  - [1. General Naming Rules](#1-general-naming-rules)
+    - [Explanation](#explanation)
+  - [2. Test Function Naming](#2-test-function-naming)
+    - [Not recommended](#not-recommended)
+    - [Recommended](#recommended)
+    - [Explanation](#explanation-1)
+    - [Optional: Parametrized Test Names](#optional-parametrized-test-names)
+  - [3. Public API Naming](#3-public-api-naming)
+    - [HTTP Route Naming](#http-route-naming)
+    - [Explanation](#explanation-2)
+    - [JSON Field Naming](#json-field-naming)
+    - [Explanation](#explanation-3)
+    - [gRPC Protobuf Definitions](#grpc-protobuf-definitions)
+      - [Message and Field Naming](#message-and-field-naming)
+      - [Explanation](#explanation-4)
+      - [Rust-Specific Notes](#rust-specific-notes)
+      - [Compatibility with Other Languages](#compatibility-with-other-languages)
+  - [4. Newtype Domain Wrappers](#4-newtype-domain-wrappers)
+    - [Prefer Newtypes Over Aliases for Domain Values](#prefer-newtypes-over-aliases-for-domain-values)
+    - [Implement `Default` for Empty/Sentinel States](#implement-default-for-emptysentinel-states)
+    - [Implement `pub const fn as_ref()` Alongside `AsRef`](#implement-pub-const-fn-as_ref-alongside-asref)
+      - [Explanation](#explanation-5)
+    - [Optional Trait Derives](#optional-trait-derives)
+- [G. Recommended Tools & Libraries](#g-recommended-tools--libraries)
+  - [1. Crate Recommendations](#1-crate-recommendations)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ---
 
 # A. Project Foundation (Setup & Structure)
