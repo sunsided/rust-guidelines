@@ -14,6 +14,7 @@ These are human-friendly and AI-compatible guidelines for building robust, maint
     - [Workspace Layout (Complex Apps / Services)](#workspace-layout-complex-apps--services)
   - [3. Workspace Management](#3-workspace-management)
   - [4. Configuration and Secrets](#4-configuration-and-secrets)
+      - [Explanation](#explanation)
   - [5. Versioning, Linting, Formatting](#5-versioning-linting-formatting)
   - [6. Feature Flags and CI](#6-feature-flags-and-ci)
 - [B. Code Organization & Architecture](#b-code-organization--architecture)
@@ -35,27 +36,27 @@ These are human-friendly and AI-compatible guidelines for building robust, maint
   - [2. Use Logging and Tracing](#2-use-logging-and-tracing)
 - [F. Naming Conventions & API Design](#f-naming-conventions--api-design)
   - [1. General Naming Rules](#1-general-naming-rules)
-    - [Explanation](#explanation)
+    - [Explanation](#explanation-1)
   - [2. Test Function Naming](#2-test-function-naming)
     - [Not recommended](#not-recommended)
     - [Recommended](#recommended)
-    - [Explanation](#explanation-1)
+    - [Explanation](#explanation-2)
     - [Optional: Parametrized Test Names](#optional-parametrized-test-names)
   - [3. Public API Naming](#3-public-api-naming)
     - [HTTP Route Naming](#http-route-naming)
-    - [Explanation](#explanation-2)
-    - [JSON Field Naming](#json-field-naming)
     - [Explanation](#explanation-3)
+    - [JSON Field Naming](#json-field-naming)
+    - [Explanation](#explanation-4)
     - [gRPC Protobuf Definitions](#grpc-protobuf-definitions)
       - [Message and Field Naming](#message-and-field-naming)
-      - [Explanation](#explanation-4)
+      - [Explanation](#explanation-5)
       - [Rust-Specific Notes](#rust-specific-notes)
       - [Compatibility with Other Languages](#compatibility-with-other-languages)
   - [4. Newtype Domain Wrappers](#4-newtype-domain-wrappers)
     - [Prefer Newtypes Over Aliases for Domain Values](#prefer-newtypes-over-aliases-for-domain-values)
     - [Implement `Default` for Empty/Sentinel States](#implement-default-for-emptysentinel-states)
     - [Implement `pub const fn as_ref()` Alongside `AsRef`](#implement-pub-const-fn-as_ref-alongside-asref)
-      - [Explanation](#explanation-5)
+      - [Explanation](#explanation-6)
     - [Optional Trait Derives](#optional-trait-derives)
   - [5. Ownership and Borrowing in API Design](#5-ownership-and-borrowing-in-api-design)
     - [Prefer Owned Values When in Doubt](#prefer-owned-values-when-in-doubt)
@@ -162,10 +163,16 @@ struct Settings {
 ```
 
 * Load from environment variables, files, or CLI args. Never commit secrets.
-* Use [`dotenvy`] in your application code to load `.env` files.
+* Use [`dotenvy`] in your application code to load `.env` files; store environment variables and secrets there.
 * Add `.env` files as a `.gitignore` rule.
+* Document any default configuration assumptions in `README.md`.
 
-[dotenvy]: https://github.com/allan2/dotenvy
+#### Explanation
+
+* In Docker and Kubernetes deployments, configuration is trivially injected through files or environment variables
+* Using `.env` files allows to keep private configuration while being deployment-compatible
+
+[`dotenvy`]: https://github.com/allan2/dotenvy
 
 ---
 
